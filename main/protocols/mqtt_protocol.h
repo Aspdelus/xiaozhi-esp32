@@ -31,6 +31,8 @@ public:
     void CloseAudioChannel() override;
     bool IsAudioChannelOpened() const override;
 
+    bool StartCusMqttClient();
+    bool CustomPublish(const std::string& topic, const std::string& payload);
 private:
     EventGroupHandle_t event_group_handle_;
 
@@ -42,6 +44,7 @@ private:
 
     std::mutex channel_mutex_;
     Mqtt* mqtt_ = nullptr;
+    Mqtt* mqtt_cus = nullptr;
     Udp* udp_ = nullptr;
     mbedtls_aes_context aes_ctx_;
     std::string aes_nonce_;

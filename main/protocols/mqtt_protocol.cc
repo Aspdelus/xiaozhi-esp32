@@ -12,6 +12,10 @@
 
 #define TAG "MQTT"
 
+#define CUSMQTT_ENDPOINT "broker.emqx.io"
+#define CUSMQTT_PORT 1883
+#define CUSMQTT_CLIENTID "codbot0"
+
 MqttProtocol::MqttProtocol() {
     event_group_handle_ = xEventGroupCreate();
 }
@@ -29,6 +33,39 @@ MqttProtocol::~MqttProtocol() {
 
 bool MqttProtocol::Start() {
     return StartMqttClient(false);
+}
+
+bool MqttProtocol::StartCusMqttClient() {
+    if (mqtt_cus != nullptr) {
+        ESP_LOGW(TAG, "Custom Mqtt client already started");
+        delete mqtt_cus;
+    }
+    
+    mqtt_cus = Board::GetInstance().CreateMqtt();
+    mqtt_cus->SetKeepAlive(90);
+
+    mqtt_cus->OnDisconnected([this]() {
+        ESP_LOGI(TAG, "Custom Mqtt Disconnected from endpoint");
+    });
+
+    if (!mqtt_cus->Connect(CUSMQTT_ENDPOINT, CUSMQTT_PORT, CUSMQTT_CLIENTID, "", "")) {
+        ESP_LOGE(TAG, "CusMqtt Failed to connect to endpoint");
+        if (on_network_error_ != nullptr) {
+            on_network_error_(Lang::Strings::SERVER_NOT_CONNECTED);
+        }
+        return false;
+    };
+
+    ESP_LOGI(TAG, "CusMqtt Connected to endpoint");
+    return true;
+}
+
+bool MqttProtocol::CustomPublish(const std::string& topic, const std::string& payload) {
+    if (mqtt_cus == nullptr) {
+        ESP_LOGE(TAG, "Custom_Mqtt client is not started");
+        return false;
+    }
+    return mqtt_cus->Publish(topic, payload);
 }
 
 bool MqttProtocol::StartMqttClient(bool report_error) {

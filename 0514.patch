@@ -1,0 +1,100 @@
+diff --git a/.gitignore b/.gitignore
+index ec2ead7..e5d2295 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -11,4 +11,5 @@ dependencies.lock
+ releases/
+ main/assets/lang_config.h
+ .DS_Store
+-.cache
+\ No newline at end of file
++.cache
++.history
+diff --git a/main/boards/atk-dnesp32s3-box/atk_dnesp32s3_box.cc b/main/boards/atk-dnesp32s3-box/atk_dnesp32s3_box.cc
+index b875c3a..5eea564 100644
+--- a/main/boards/atk-dnesp32s3-box/atk_dnesp32s3_box.cc
++++ b/main/boards/atk-dnesp32s3-box/atk_dnesp32s3_box.cc
+@@ -210,6 +210,7 @@ private:
+         auto& thing_manager = iot::ThingManager::GetInstance();
+         thing_manager.AddThing(iot::CreateThing("Speaker"));
+         thing_manager.AddThing(iot::CreateThing("Screen"));
++        thing_manager.AddThing(iot::CreateThing("Codbot"));
+     }
+ 
+ public:
+diff --git a/main/protocols/mqtt_protocol.cc b/main/protocols/mqtt_protocol.cc
+index fa786e7..b680034 100644
+--- a/main/protocols/mqtt_protocol.cc
++++ b/main/protocols/mqtt_protocol.cc
+@@ -12,6 +12,10 @@
+ 
+ #define TAG "MQTT"
+ 
++#define CUSMQTT_ENDPOINT "broker.emqx.io"
++#define CUSMQTT_PORT 1883
++#define CUSMQTT_CLIENTID "codbot0"
++
+ MqttProtocol::MqttProtocol() {
+     event_group_handle_ = xEventGroupCreate();
+ }
+@@ -31,6 +35,39 @@ bool MqttProtocol::Start() {
+     return StartMqttClient(false);
+ }
+ 
++bool MqttProtocol::StartCusMqttClient() {
++    if (mqtt_cus != nullptr) {
++        ESP_LOGW(TAG, "Custom Mqtt client already started");
++        delete mqtt_cus;
++    }
++    
++    mqtt_cus = Board::GetInstance().CreateMqtt();
++    mqtt_cus->SetKeepAlive(90);
++
++    mqtt_cus->OnDisconnected([this]() {
++        ESP_LOGI(TAG, "Custom Mqtt Disconnected from endpoint");
++    });
++
++    if (!mqtt_cus->Connect(CUSMQTT_ENDPOINT, CUSMQTT_PORT, CUSMQTT_CLIENTID, "", "")) {
++        ESP_LOGE(TAG, "CusMqtt Failed to connect to endpoint");
++        if (on_network_error_ != nullptr) {
++            on_network_error_(Lang::Strings::SERVER_NOT_CONNECTED);
++        }
++        return false;
++    };
++
++    ESP_LOGI(TAG, "CusMqtt Connected to endpoint");
++    return true;
++}
++
++bool MqttProtocol::CustomPublish(const std::string& topic, const std::string& payload) {
++    if (mqtt_cus == nullptr) {
++        ESP_LOGE(TAG, "Custom_Mqtt client is not started");
++        return false;
++    }
++    return mqtt_cus->Publish(topic, payload);
++}
++
+ bool MqttProtocol::StartMqttClient(bool report_error) {
+     if (mqtt_ != nullptr) {
+         ESP_LOGW(TAG, "Mqtt client already started");
+diff --git a/main/protocols/mqtt_protocol.h b/main/protocols/mqtt_protocol.h
+index f8e9fc0..7440a07 100644
+--- a/main/protocols/mqtt_protocol.h
++++ b/main/protocols/mqtt_protocol.h
+@@ -31,6 +31,8 @@ public:
+     void CloseAudioChannel() override;
+     bool IsAudioChannelOpened() const override;
+ 
++    bool StartCusMqttClient();
++    bool CustomPublish(const std::string& topic, const std::string& payload);
+ private:
+     EventGroupHandle_t event_group_handle_;
+ 
+@@ -42,6 +44,7 @@ private:
+ 
+     std::mutex channel_mutex_;
+     Mqtt* mqtt_ = nullptr;
++    Mqtt* mqtt_cus = nullptr;
+     Udp* udp_ = nullptr;
+     mbedtls_aes_context aes_ctx_;
+     std::string aes_nonce_;
